@@ -67,6 +67,33 @@ ligne_ordonnance_dto = ordonnances_ns.model(
     },
 )
 
+specialite_resume_dto = ordonnances_ns.model(
+    "OrdonnanceSpecialiteDTO",
+    {
+        "id": fields.Integer(description="ID de la spécialité"),
+        "libelle": fields.String(description="Libellé de la spécialité"),
+    },
+)
+
+medecin_resume_dto = ordonnances_ns.model(
+    "OrdonnanceMedecinDTO",
+    {
+        "id": fields.Integer(description="ID du médecin"),
+        "nom": fields.String(description="Nom"),
+        "prenom": fields.String(description="Prénom"),
+        "specialite": fields.Nested(specialite_resume_dto),
+    },
+)
+
+patient_resume_dto = ordonnances_ns.model(
+    "OrdonnancePatientDTO",
+    {
+        "id": fields.Integer(description="ID du patient"),
+        "nom": fields.String(description="Nom"),
+        "prenom": fields.String(description="Prénom"),
+    },
+)
+
 ordonnance_dto = ordonnances_ns.model(
     "OrdonnanceDTO",
     {
@@ -75,9 +102,10 @@ ordonnance_dto = ordonnances_ns.model(
         "instructions": fields.String(description="Instructions médicales"),
         "id_rendezvous": fields.Integer(description="ID du rendez-vous associé"),
         "lignes": fields.List(fields.Nested(ligne_ordonnance_dto)),
+        "medecin": fields.Nested(medecin_resume_dto, attribute="rendezvous.medecin"),
+        "patient": fields.Nested(patient_resume_dto, attribute="rendezvous.patient"),
     },
 )
-
 
 @ordonnances_ns.route("/<int:id>/ordonnance")
 @ordonnances_ns.param("id", "Identifiant unique du rendez-vous")
@@ -107,3 +135,4 @@ class OrdonnanceResource(Resource):
             lignes_data=payload.get("lignes", []),
         )
         return ordonnance, 201
+

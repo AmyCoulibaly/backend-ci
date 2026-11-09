@@ -172,7 +172,13 @@ flask seed-db
 | `GET` | `/api/medecins/<id>/disponibilites` | Public | `200`, `404` | Liste les créneaux libres (`est_reserve=False`) d'un médecin |
 | `POST` | `/api/rendezvous` | `PATIENT` (JWT) | `201`, `403`, `404`, `409` | Réserve un créneau et crée un RDV (`EN_ATTENTE`) |
 | `GET` | `/api/rendezvous?date=today` | `MEDECIN` (JWT) | `200`, `400`, `403` | Liste les RDV du médecin connecté (filtrable par date) |
-| `PUT` | `/api/rendezvous/<id>` | `MEDECIN` (JWT) | `200`, `400`, `403`, `404` | Met à jour le statut (`ACCEPTE`, `ANNULE`, `REFUSE`, `TERMINE`) |
+| `PUT` | `/api/rendezvous/<id>` | `MEDECIN` (JWT) | `200`, `400`, `403`, `404`, `409`, `422` | Met à jour le statut (transitions contrôlées : `EN_ATTENTE`→`ACCEPTE`/`REFUSE`/`ANNULE`, `ACCEPTE`→`TERMINE`/`ANNULE`) **ou** déplace le RDV vers un autre créneau libre (`{"id_disponibilite": <id>}`) |
+| `POST` | `/api/medecins/<id>/disponibilites` | `MEDECIN` propriétaire (JWT) | `201`, `400`, `403`, `409` | Crée un créneau (`409` si chevauchement) |
+| `GET` | `/api/medecins/<id>/disponibilites?toutes=true` | `MEDECIN` propriétaire (JWT) | `200`, `403`, `404` | Tous les créneaux (libres et réservés) |
+| `DELETE` | `/api/disponibilites/<id>` | `MEDECIN` propriétaire (JWT) | `204`, `403`, `404`, `409` | Supprime un créneau libre (`409` s'il est réservé) |
+| `GET` | `/api/patients/<id>/rendezvous` | `PATIENT` propriétaire (JWT) | `200`, `403` | Historique des RDV du patient (`?date=` facultatif) |
+| `GET` | `/api/patients/<id>/ordonnances` | `PATIENT` propriétaire (JWT) | `200`, `403` | Ordonnances reçues par le patient |
+| `GET` | `/api/medecins/<id>/ordonnances` | `MEDECIN` propriétaire (JWT) | `200`, `403` | Ordonnances émises par le médecin |
 | `POST` | `/api/rendezvous/<id>/ordonnance` | `MEDECIN` (JWT) | `201`, `403`, `404`, `409`, `422` | Crée une ordonnance avec ses lignes (requiert un RDV `TERMINE`) |
 
 ### Exemples de requêtes (`curl`)

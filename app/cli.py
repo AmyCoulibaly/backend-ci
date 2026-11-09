@@ -14,6 +14,9 @@ from app.models import (
 )
 
 
+JOURS_DE_CRENEAUX = 7
+
+
 def register_cli_commands(app: Flask) -> None:
     """Enregistre les commandes CLI sur l'instance Flask."""
 
@@ -141,26 +144,38 @@ def register_cli_commands(app: Flask) -> None:
                 pat.set_password(pat_info["mot_de_passe"])
                 db.session.add(pat)
 
-        aujourdhui = date.today()
+        # Créneaux de 30 min sur les 7 prochains jours (dimanche exclu),
+        # matin et après-midi. Idempotent : un créneau existant n'est pas recréé
+        # et les créneaux déjà passés aujourd'hui sont ignorés.
+        maintenant = datetime.now()
+        horaires = [(9, 0), (9, 30), (10, 0), (10, 30), (11, 0), (15, 0), (15, 30), (16, 0)]
+        nb_creneaux = 0
         for med in medecins_crees:
-            if med.disponibilites.count() == 0:
-                debut_1 = datetime.combine(aujourdhui, datetime.min.time()) + timedelta(
-                    hours=9
-                )
-                debut_2 = datetime.combine(aujourdhui, datetime.min.time()) + timedelta(
-                    hours=11
-                )
-                for debut in (debut_1, debut_2):
-                    dispo = Disponibilite(
-                        date_heure_debut=debut,
-                        date_heure_fin=debut + timedelta(minutes=45),
-                        est_reserve=False,
-                        id_medecin=med.id,
-                    )
-                    db.session.add(dispo)
+            for decalage in range(JOURS_DE_CRENEAUX):
+                jour = date.today() + timedelta(days=decalage)
+                if jour.weekday() == 6:
+                    continue
+                for heure, minute in horaires:
+                    debut = datetime(jour.year, jour.month, jour.day, heure, minute)
+                    if debut <= maintenant:
+                        continue
+                    existe = Disponibilite.query.filter_by(
+                        id_medecin=med.id, date_heure_debut=debut
+                    ).first()
+                    if existe is None:
+                        db.session.add(
+                            Disponibilite(
+                                date_heure_debut=debut,
+                                date_heure_fin=debut + timedelta(minutes=30),
+                                est_reserve=False,
+                                id_medecin=med.id,
+                            )
+                        )
+                        nb_creneaux += 1
 
         db.session.commit()
         click.echo(
             "Base de données pré-remplie avec succès : "
-            f"{len(specialites_map)} spécialités, 2 médecins, 2 patients et leurs créneaux."
+            f"{len(specialites_map)} spécialités, 2 médecins, 2 patients "
+            f"et {nb_creneaux} nouveaux créneaux (7 prochains jours)."
         )

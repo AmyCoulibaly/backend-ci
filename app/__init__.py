@@ -4,7 +4,14 @@ import os
 from flask import Flask, jsonify
 from sqlalchemy import text
 
-from app.api import auth_ns, medecins_ns, ordonnances_ns, rendezvous_ns
+from app.api import (
+    auth_ns,
+    disponibilites_ns,
+    medecins_ns,
+    ordonnances_ns,
+    patients_ns,
+    rendezvous_ns,
+)
 from app.cli import register_cli_commands
 from app.config import CONFIG_BY_NAME
 from app.extensions import cors, create_api, db, jwt, migrate
@@ -60,7 +67,14 @@ def create_app(config_name: str | None = None) -> Flask:
     # Initialisation de Flask-RESTX (une instance Api par application)
     api = create_api()
     api.init_app(app)
-    for namespace in (auth_ns, medecins_ns, rendezvous_ns, ordonnances_ns):
+    for namespace in (
+        auth_ns,
+        medecins_ns,
+        disponibilites_ns,
+        rendezvous_ns,
+        ordonnances_ns,
+        patients_ns,
+    ):
         api.add_namespace(namespace)
 
     # Gestionnaires d'erreurs centralisés

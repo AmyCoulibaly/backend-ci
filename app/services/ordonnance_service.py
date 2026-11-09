@@ -3,7 +3,7 @@
 from typing import Any
 
 from app.extensions import db
-from app.models import LigneOrdonnance, Ordonnance, RendezVous, StatutRendezVous
+from app.models import LigneOrdonnance, Ordonnance, RendezVous, RoleUtilisateur, StatutRendezVous
 from app.services.exceptions import (
     BadRequestError,
     ConflictError,
@@ -91,3 +91,18 @@ class OrdonnanceService:
 
         db.session.commit()
         return ordonnance
+
+    @staticmethod
+    def lister_ordonnances(id_utilisateur: int, role: str) -> list[Ordonnance]:
+        """Liste les ordonnances du patient (reçues) ou du médecin (émises) connecté."""
+        colonne = (
+            RendezVous.id_patient
+            if role == RoleUtilisateur.PATIENT.value
+            else RendezVous.id_medecin
+        )
+        return (
+            Ordonnance.query.join(RendezVous, Ordonnance.id_rendezvous == RendezVous.id)
+            .filter(colonne == id_utilisateur)
+            .order_by(Ordonnance.date_emission.desc(), Ordonnance.id.desc())
+            .all()
+        )
