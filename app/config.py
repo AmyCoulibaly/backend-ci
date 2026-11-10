@@ -15,6 +15,8 @@ class Config:
     )
     RESTX_MASK_SWAGGER = False
     RESTX_ERROR_404_HELP = False
+    CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")
+    PASSWORD_MIN_LENGTH = 8
 
 
 class DevelopmentConfig(Config):
@@ -44,14 +46,26 @@ class ProductionConfig(Config):
 
     DEBUG = False
     TESTING = False
-    SQLALCHEMY_DATABASE_URI = os.getenv(
-        "DATABASE_URL",
-        "postgresql://postgres:postgres@db:5432/esante_senegal_prod",
-    )
+    SECRET_KEY = os.getenv("SECRET_KEY", "")
+    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "")
+    SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", "")
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_pre_ping": True,
         "pool_recycle": 300,
     }
+    CORS_ORIGINS = os.getenv("CORS_ORIGINS", "")
+
+    REQUIRED_ENV_VARS = ("SECRET_KEY", "JWT_SECRET_KEY", "DATABASE_URL")
+
+    @classmethod
+    def validate(cls) -> None:
+        """Lève RuntimeError si une variable obligatoire est absente."""
+        missing = [v for v in cls.REQUIRED_ENV_VARS if not os.getenv(v)]
+        if missing:
+            raise RuntimeError(
+                "Variables d'environnement obligatoires en production : "
+                + ", ".join(missing)
+            )
 
 
 CONFIG_BY_NAME = {

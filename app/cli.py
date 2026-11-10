@@ -20,6 +20,12 @@ JOURS_DE_CRENEAUX = 7
 def register_cli_commands(app: Flask) -> None:
     """Enregistre les commandes CLI sur l'instance Flask."""
 
+    @app.cli.command("create-tables")
+    def create_tables() -> None:
+        """Crée toutes les tables du schéma (alternative à flask db upgrade sans migrations/)."""
+        db.create_all()
+        click.echo("Tables créées avec succès.")
+
     @app.cli.command("seed-db")
     def seed_db() -> None:
         """Pré-remplit la base de données e-Santé Sénégal avec des données de test."""

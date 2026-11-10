@@ -25,13 +25,18 @@ def create_app(config_name: str | None = None) -> Flask:
 
     app = Flask(__name__)
     config_class = CONFIG_BY_NAME.get(config_name, CONFIG_BY_NAME["default"])
+    if hasattr(config_class, "validate"):
+        config_class.validate()
     app.config.from_object(config_class)
 
     # Initialisation des extensions
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
-    cors.init_app(app)
+
+    cors_origins = app.config.get("CORS_ORIGINS", "*")
+    origins = [o.strip() for o in cors_origins.split(",") if o.strip()] if cors_origins else ["*"]
+    cors.init_app(app, origins=origins)
 
     # Endpoint public de healthcheck pour Docker / Jenkins
     @app.route("/health", methods=["GET"])
