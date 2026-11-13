@@ -10,11 +10,10 @@ pipeline {
         FLASK_ENV             = "testing"
     }
 
-    // options {
-    //     timestamps()
-    //     disableConcurrentBuilds()
-    //     buildDiscarder(logRotator(numToKeepStr: '10'))
-    // }
+    options {
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
 
     stages {
         stage('Checkout') {
@@ -122,7 +121,7 @@ pipeline {
     post {
         always {
             sh 'docker image prune -f || true'
-            cleanWs()
+            deleteDir()
         }
         success {
             echo "Pipeline CI backend-ci : ${IMAGE_NAME}:${IMAGE_TAG}"
