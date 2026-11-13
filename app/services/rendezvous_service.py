@@ -5,13 +5,27 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
-from app.models import Disponibilite, Patient, RendezVous, StatutRendezVous
+from app.models import Disponibilite, Patient, RendezVous, RoleUtilisateur, StatutRendezVous
 from app.services.exceptions import (
     BadRequestError,
     ConflictError,
     ForbiddenError,
     NotFoundError,
+    UnprocessableEntityError,
 )
+
+# Transitions de statut autorisées (diagramme d'états du document de modélisation)
+TRANSITIONS_AUTORISEES = {
+    StatutRendezVous.EN_ATTENTE: {
+        StatutRendezVous.ACCEPTE,
+        StatutRendezVous.REFUSE,
+        StatutRendezVous.ANNULE,
+    },
+    StatutRendezVous.ACCEPTE: {StatutRendezVous.TERMINE, StatutRendezVous.ANNULE},
+    StatutRendezVous.REFUSE: set(),
+    StatutRendezVous.ANNULE: set(),
+    StatutRendezVous.TERMINE: set(),
+}
 
 
 class RendezVousService:
@@ -80,7 +94,27 @@ class RendezVousService:
         filtre_date: str | None = None,
     ) -> list[RendezVous]:
         """Liste les rendez-vous d'un médecin, avec filtre optionnel (?date=today ou YYYY-MM-DD)."""
-        query = RendezVous.query.filter_by(id_medecin=id_medecin)
+        return RendezVousService.lister_rendezvous(
+            id_utilisateur=id_medecin,
+            role=RoleUtilisateur.MEDECIN.value,
+            filtre_date=filtre_date,
+        )
+
+    @staticmethod
+    def lister_rendezvous(
+        id_utilisateur: int,
+        role: str,
+        filtre_date: str | None = None,
+    ) -> list[RendezVous]:
+        """
+        Liste les rendez-vous de l'utilisateur connecté :
+        - MEDECIN : son agenda ; PATIENT : son historique de rendez-vous.
+        Filtre optionnel ?date=today ou YYYY-MM-DD.
+        """
+        if role == RoleUtilisateur.PATIENT.value:
+            query = RendezVous.query.filter_by(id_patient=id_utilisateur)
+        else:
+            query = RendezVous.query.filter_by(id_medecin=id_utilisateur)
 
         if filtre_date:
             filtre_normalise = filtre_date.strip().lower()
@@ -129,6 +163,11 @@ class RendezVousService:
                 f"{', '.join(s.value for s in StatutRendezVous)}."
             ) from exc
 
+        if nouveau_statut not in TRANSITIONS_AUTORISEES[rendezvous.statut]:
+            raise UnprocessableEntityError(
+                f"Transition interdite : {rendezvous.statut.value} -> {nouveau_statut.value}."
+            )
+
         rendezvous.statut = nouveau_statut
 
         if nouveau_statut in (StatutRendezVous.ANNULE, StatutRendezVous.REFUSE):
@@ -140,3 +179,57 @@ class RendezVousService:
 
         db.session.commit()
         return rendezvous
+
+    @staticmethod
+    def deplacer(
+        id_rendezvous: int,
+        id_medecin: int,
+        id_disponibilite: int,
+    ) -> RendezVous:
+        """
+        Déplace un rendez-vous (EN_ATTENTE ou ACCEPTE) vers un autre créneau libre du même médecin :
+        libère l'ancien créneau et réserve le nouveau.
+        """
+        rendezvous = db.session.get(RendezVous, id_rendezvous)
+        if rendezvous is None:
+            raise NotFoundError(f"Rendez-vous avec l'id {id_rendezvous} introuvable.")
+        if rendezvous.id_medecin != id_medecin:
+            raise ForbiddenError(
+                "Vous n'êtes pas autorisé à modifier le rendez-vous d'un autre médecin."
+            )
+        if rendezvous.statut not in (StatutRendezVous.EN_ATTENTE, StatutRendezVous.ACCEPTE):
+            raise UnprocessableEntityError(
+                f"Un rendez-vous au statut {rendezvous.statut.value} ne peut plus être déplacé."
+            )
+
+        try:
+            nouvelle = (
+                db.session.query(Disponibilite)
+                .filter(Disponibilite.id == id_disponibilite)
+                .with_for_update()
+                .first()
+            )
+            if nouvelle is None or nouvelle.id_medecin != id_medecin:
+                raise NotFoundError("Créneau introuvable pour ce médecin.")
+            if nouvelle.id == rendezvous.id_disponibilite:
+                return rendezvous
+            if nouvelle.est_reserve:
+                raise ConflictError("Ce créneau est déjà réservé.")
+
+            ancienne = rendezvous.disponibilite
+            if ancienne is not None:
+                ancienne.est_reserve = False
+                rendezvous.disponibilite = None
+                db.session.flush()
+
+            nouvelle.est_reserve = True
+            rendezvous.disponibilite = nouvelle
+            rendezvous.date_heure = nouvelle.date_heure_debut
+            db.session.commit()
+            return rendezvous
+        except IntegrityError as exc:
+            db.session.rollback()
+            raise ConflictError("Conflit d'accès concurrent sur ce créneau.") from exc
+        except Exception:
+            db.session.rollback()
+            raise

@@ -35,11 +35,43 @@ rendezvous_update_input = rendezvous_ns.model(
     "RendezVousUpdateInput",
     {
         "statut": fields.String(
-            required=True,
+            required=False,
             description="Nouveau statut du rendez-vous",
             enum=["ACCEPTE", "REFUSE", "ANNULE", "TERMINE"],
             example="ACCEPTE",
         ),
+        "id_disponibilite": fields.Integer(
+            required=False,
+            description="Nouveau créneau (déplacement du rendez-vous vers un autre créneau libre)",
+            example=2,
+        ),
+    },
+)
+
+specialite_resume_dto = rendezvous_ns.model(
+    "SpecialiteResumeDTO",
+    {
+        "id": fields.Integer(description="ID de la spécialité"),
+        "libelle": fields.String(description="Libellé de la spécialité"),
+    },
+)
+
+patient_resume_dto = rendezvous_ns.model(
+    "PatientResumeDTO",
+    {
+        "id": fields.Integer(description="ID du patient"),
+        "nom": fields.String(description="Nom"),
+        "prenom": fields.String(description="Prénom"),
+    },
+)
+
+medecin_resume_dto = rendezvous_ns.model(
+    "MedecinResumeDTO",
+    {
+        "id": fields.Integer(description="ID du médecin"),
+        "nom": fields.String(description="Nom"),
+        "prenom": fields.String(description="Prénom"),
+        "specialite": fields.Nested(specialite_resume_dto),
     },
 )
 
@@ -57,6 +89,8 @@ rendezvous_dto = rendezvous_ns.model(
         "id_patient": fields.Integer(description="ID du patient"),
         "id_medecin": fields.Integer(description="ID du médecin"),
         "id_disponibilite": fields.Integer(description="ID du créneau réservé"),
+        "patient": fields.Nested(patient_resume_dto),
+        "medecin": fields.Nested(medecin_resume_dto),
     },
 )
 
@@ -96,11 +130,9 @@ class RendezVousListResource(Resource):
     @rendezvous_ns.response(403, "Accès réservé aux médecins.")
     def get(self):
         """(Rôle MEDECIN) Liste les rendez-vous du médecin connecté (?date=today)."""
-        id_medecin = int(get_jwt_identity())
-        filtre_date = request.args.get("date")
         rdvs = RendezVousService.lister_rendezvous_medecin(
-            id_medecin=id_medecin,
-            filtre_date=filtre_date,
+            id_medecin=int(get_jwt_identity()),
+            filtre_date=request.args.get("date"),
         )
         return rdvs, 200
 
@@ -116,6 +148,8 @@ class RendezVousDetailResource(Resource):
     @rendezvous_ns.response(400, "Statut invalide.")
     @rendezvous_ns.response(403, "Accès interdit (rôle ou médecin non propriétaire).")
     @rendezvous_ns.response(404, "Rendez-vous introuvable.")
+    @rendezvous_ns.response(409, "Nouveau créneau déjà réservé.")
+    @rendezvous_ns.response(422, "Transition de statut interdite.")
     def put(self, id: int):
         """
         (Rôle MEDECIN) Met à jour le statut d'un RDV (ACCEPTE, ANNULE, REFUSE, TERMINE).
@@ -123,10 +157,20 @@ class RendezVousDetailResource(Resource):
         """
         payload = request.get_json(silent=True) or {}
         statut = payload.get("statut")
-        if not statut:
-            raise BadRequestError("Le champ 'statut' est obligatoire.")
-
         id_medecin = int(get_jwt_identity())
+
+        # Déplacement du rendez-vous vers un autre créneau libre du même médecin
+        if payload.get("id_disponibilite") is not None and not statut:
+            rdv = RendezVousService.deplacer(
+                id_rendezvous=id,
+                id_medecin=id_medecin,
+                id_disponibilite=int(payload["id_disponibilite"]),
+            )
+            return rdv, 200
+
+        if not statut:
+            raise BadRequestError("Le champ 'statut' (ou 'id_disponibilite') est obligatoire.")
+
         rdv = RendezVousService.mettre_a_jour_statut(
             id_rendezvous=id,
             id_medecin=id_medecin,

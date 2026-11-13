@@ -3,7 +3,7 @@
 from typing import Any
 
 from app.extensions import db
-from app.models import LigneOrdonnance, Ordonnance, RendezVous, StatutRendezVous
+from app.models import LigneOrdonnance, Ordonnance, RendezVous, RoleUtilisateur, StatutRendezVous
 from app.services.exceptions import (
     BadRequestError,
     ConflictError,
@@ -57,37 +57,53 @@ class OrdonnanceService:
                 "Une ordonnance doit contenir au moins une ligne de médicament."
             )
 
+        lignes_validees = []
+        for index, ligne in enumerate(lignes_data, start=1):
+            medicament = (ligne.get("medicament") or "").strip()
+            posologie = (ligne.get("posologie") or "").strip()
+            duree = (ligne.get("duree") or "").strip()
+            try:
+                quantite = int(ligne.get("quantite", 1))
+            except (TypeError, ValueError) as exc:
+                raise BadRequestError(
+                    f"Ligne {index} invalide : la quantité doit être un entier."
+                ) from exc
+
+            if not medicament or not posologie or not duree:
+                raise BadRequestError(
+                    f"Ligne {index} invalide : medicament, posologie et duree sont requis."
+                )
+            if quantite <= 0:
+                raise BadRequestError(
+                    f"Ligne {index} invalide : la quantité doit être strictement positive."
+                )
+            lignes_validees.append(
+                {"medicament": medicament, "posologie": posologie, "duree": duree, "quantite": quantite}
+            )
+
         ordonnance = Ordonnance(
             instructions=instructions,
             id_rendezvous=rendezvous.id,
         )
         db.session.add(ordonnance)
 
-        for index, ligne in enumerate(lignes_data, start=1):
-            medicament = (ligne.get("medicament") or "").strip()
-            posologie = (ligne.get("posologie") or "").strip()
-            duree = (ligne.get("duree") or "").strip()
-            quantite = int(ligne.get("quantite", 1))
-
-            if not medicament or not posologie or not duree:
-                db.session.rollback()
-                raise BadRequestError(
-                    f"Ligne {index} invalide : medicament, posologie et duree sont requis."
-                )
-            if quantite <= 0:
-                db.session.rollback()
-                raise BadRequestError(
-                    f"Ligne {index} invalide : la quantité doit être strictement positive."
-                )
-
-            ligne_obj = LigneOrdonnance(
-                medicament=medicament,
-                posologie=posologie,
-                duree=duree,
-                quantite=quantite,
-                ordonnance=ordonnance,
-            )
-            db.session.add(ligne_obj)
+        for lv in lignes_validees:
+            db.session.add(LigneOrdonnance(ordonnance=ordonnance, **lv))
 
         db.session.commit()
         return ordonnance
+
+    @staticmethod
+    def lister_ordonnances(id_utilisateur: int, role: str) -> list[Ordonnance]:
+        """Liste les ordonnances du patient (reçues) ou du médecin (émises) connecté."""
+        colonne = (
+            RendezVous.id_patient
+            if role == RoleUtilisateur.PATIENT.value
+            else RendezVous.id_medecin
+        )
+        return (
+            Ordonnance.query.join(RendezVous, Ordonnance.id_rendezvous == RendezVous.id)
+            .filter(colonne == id_utilisateur)
+            .order_by(Ordonnance.date_emission.desc(), Ordonnance.id.desc())
+            .all()
+        )

@@ -4,7 +4,8 @@ pipeline {
     environment {
         DOCKERHUB_CREDENTIALS = credentials('dockerhub-credentials')
         IMAGE_NAME            = "${DOCKERHUB_CREDENTIALS_USR}/esante-senegal-backend"
-        IMAGE_TAG             = "${env.BUILD_NUMBER}"
+        GIT_SHORT_SHA         = "${env.GIT_COMMIT?.take(7) ?: 'unknown'}"
+        IMAGE_TAG             = "${GIT_SHORT_SHA}-${env.BUILD_NUMBER}"
         PYTHONUNBUFFERED      = "1"
         FLASK_ENV             = "testing"
     }
@@ -28,7 +29,7 @@ pipeline {
                     python3 -m venv .venv
                     . .venv/bin/activate
                     pip install --upgrade pip
-                    pip install -r requirements.txt
+                    pip install -r requirements-dev.txt
                 '''
             }
         }
@@ -51,26 +52,52 @@ pipeline {
             steps {
                 sh '''
                     . .venv/bin/activate
-                    bandit -r app/ -ll -ii -f json -o bandit-report.json || true
+                    bandit -r app/ -ll -ii -f json -o bandit-report.json --exit-zero
+                    bandit -r app/ -ll -ii -f txt -o bandit-report.txt --exit-zero
                     bandit -r app/ -ll -ii
                 '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'bandit-report.*', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Vérification des dépendances (pip-audit)') {
+            steps {
+                sh '''
+                    . .venv/bin/activate
+                    pip-audit -r requirements.txt --desc -f json -o pip-audit-report.json || true
+                    pip-audit -r requirements.txt --desc
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'pip-audit-report.json', allowEmptyArchive: true
+                }
             }
         }
 
         stage('Docker Build') {
             steps {
-                sh '''
+                sh """
                     docker build -t ${IMAGE_NAME}:${IMAGE_TAG} -t ${IMAGE_NAME}:latest .
-                '''
+                """
             }
         }
 
         stage('Scan de vulnérabilités (Trivy)') {
             steps {
-                sh '''
-                    trivy image --exit-code 0 --severity MEDIUM,HIGH ${IMAGE_NAME}:${IMAGE_TAG}
+                sh """
+                    trivy image --exit-code 0 --severity MEDIUM,HIGH ${IMAGE_NAME}:${IMAGE_TAG} | tee trivy-report.txt
                     trivy image --exit-code 1 --severity CRITICAL --ignore-unfixed ${IMAGE_NAME}:${IMAGE_TAG}
-                '''
+                """
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
+                }
             }
         }
 
@@ -98,7 +125,7 @@ pipeline {
             cleanWs()
         }
         success {
-            echo "Pipeline CI backend-ci exécuté avec succès : ${IMAGE_NAME}:${IMAGE_TAG}"
+            echo "Pipeline CI backend-ci : ${IMAGE_NAME}:${IMAGE_TAG}"
         }
         failure {
             echo "Échec du pipeline CI backend-ci. Consultez les journaux d'étape."

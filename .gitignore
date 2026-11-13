@@ -8,5 +8,8 @@ env/
 .pytest_cache/
 pytest-report.xml
 bandit-report.json
+bandit-report.txt
+pip-audit-report.json
+trivy-report.txt
 *.db
 *.sqlite3

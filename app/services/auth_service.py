@@ -1,8 +1,10 @@
 """Service d'authentification et d'inscription (AuthService)."""
 
+import re
 from datetime import datetime
 from typing import Any
 
+from flask import current_app
 from flask_jwt_extended import create_access_token
 from sqlalchemy.exc import IntegrityError
 
@@ -14,6 +16,23 @@ from app.services.exceptions import (
     NotFoundError,
     UnauthorizedError,
 )
+
+
+def _valider_mot_de_passe(mot_de_passe: str) -> None:
+    """Vérifie la robustesse minimale du mot de passe."""
+    min_len = current_app.config.get("PASSWORD_MIN_LENGTH", 8)
+    if len(mot_de_passe) < min_len:
+        raise BadRequestError(
+            f"Le mot de passe doit contenir au moins {min_len} caractères."
+        )
+    if not re.search(r"[a-zA-Z]", mot_de_passe):
+        raise BadRequestError(
+            "Le mot de passe doit contenir au moins une lettre."
+        )
+    if not re.search(r"\d", mot_de_passe):
+        raise BadRequestError(
+            "Le mot de passe doit contenir au moins un chiffre."
+        )
 
 
 class AuthService:
@@ -32,6 +51,8 @@ class AuthService:
             raise BadRequestError(
                 "Les champs nom, prenom, email et mot_de_passe sont obligatoires."
             )
+
+        _valider_mot_de_passe(mot_de_passe)
 
         try:
             role = RoleUtilisateur(role_str)
@@ -86,7 +107,11 @@ class AuthService:
                 )
 
             tarif = data.get("tarif", 0.0)
-            if float(tarif) < 0:
+            try:
+                tarif = float(tarif)
+            except (TypeError, ValueError) as exc:
+                raise BadRequestError("Le tarif doit être un nombre valide.") from exc
+            if tarif < 0:
                 raise BadRequestError("Le tarif de consultation doit être positif.")
 
             utilisateur = Medecin(
