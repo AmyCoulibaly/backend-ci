@@ -10,11 +10,11 @@ pipeline {
         FLASK_ENV             = "testing"
     }
 
-    options {
-        timestamps()
-        disableConcurrentBuilds()
-        buildDiscarder(logRotator(numToKeepStr: '10'))
-    }
+    // options {
+    //     timestamps()
+    //     disableConcurrentBuilds()
+    //     buildDiscarder(logRotator(numToKeepStr: '10'))
+    // }
 
     stages {
         stage('Checkout') {
