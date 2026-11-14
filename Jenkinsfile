@@ -5,8 +5,7 @@ pipeline {
         DOCKERHUB_CREDENTIALS = credentials('dockerhub-credentials')
         IMAGE_NAME            = "${DOCKERHUB_CREDENTIALS_USR}/esante-senegal-backend"
         IMAGE_TAG             = "${env.BUILD_NUMBER}"
-        PYTHONUNBUFFERED      = "1"
-        FLASK_ENV             = "testing"
+        TEST_IMAGE            = 'esante-backend-test'
     }
 
     options {
@@ -21,41 +20,9 @@ pipeline {
             }
         }
 
-        stage('Install dependencies') {
+        stage('Tests et Analyse de sécurité') {
             steps {
-                sh '''
-                    python3 -m venv .venv
-                    . .venv/bin/activate
-                    pip install --upgrade pip
-                    pip install -r requirements-dev.txt
-                '''
-            }
-        }
-
-        stage('Pytest') {
-            steps {
-                sh '''
-                    . .venv/bin/activate
-                    pytest tests/ -v
-                '''
-            }
-        }
-
-        stage('Bandit (SAST)') {
-            steps {
-                sh '''
-                    . .venv/bin/activate
-                    bandit -r app/ -ll -ii
-                '''
-            }
-        }
-
-        stage('pip-audit') {
-            steps {
-                sh '''
-                    . .venv/bin/activate
-                    pip-audit -r requirements.txt --desc || true
-                '''
+                sh 'docker build --target test -t $TEST_IMAGE .'
             }
         }
 
