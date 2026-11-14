@@ -43,9 +43,8 @@ pipeline {
 
         stage('Docker Push') {
             when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
+                expression {
+                    return env.GIT_BRANCH == 'origin/main' || env.GIT_BRANCH == 'origin/master' || env.GIT_BRANCH == 'main' || env.GIT_BRANCH == 'master'
                 }
             }
             steps {
